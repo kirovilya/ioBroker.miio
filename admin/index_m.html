@@ -1,0 +1,123 @@
+<html>
+<head>
+<!-- these 4 files always have to be included -->
+<link rel="stylesheet" type="text/css" href="../../lib/css/materialize.css">
+<link rel="stylesheet" type="text/css" href="../../css/adapter.css"/>
+
+<script type="text/javascript" src="../../lib/js/jquery-3.2.1.min.js"></script>
+<script type="text/javascript" src="../../socket.io/socket.io.js"></script>
+
+<!-- these files always have to be included -->
+<script type="text/javascript" src="../../js/translate.js"></script>
+<script type="text/javascript" src="../../lib/js/materialize.js"></script>
+<script type="text/javascript" src="../../js/adapter-settings.js"></script>
+<script type="text/javascript" src="words.js"></script>
+ <style>
+  .m .col .select-wrapper+label {
+   top: -26px;  
+  }
+     .m span{
+         font-size: 0.9em;
+     }
+ </style>
+<!-- you have to define 2 functions in the global scope: -->
+<script type="text/javascript">
+    var namespace = 'miio.' + instance,
+        namespaceLen = namespace.length;
+
+    // the function loadSettings has to exist ...
+    function load(settings, onChange) {
+        // example: select elements with id=key and class=value and insert value
+       if (!settings) return;
+        $('.value').each(function () {            
+            var $key = $(this);
+            var id = $key.attr('id');
+            if ($key.attr('type') === 'checkbox') {
+		        // do not call onChange direct, because onChange could expect some arguments
+                $key.prop('checked', settings[id]).change(function() {
+                    onChange();
+                });
+            } else {
+		        // do not call onChange direct, because onChange could expect some arguments
+                $key.val(settings[id]).change(function() {
+                    onChange();
+                }).keyup(function() {
+                    onChange();
+                });
+            }
+        });
+        onChange(false);
+        $('#browse').click(function() {
+            browsing();
+        });
+        M.updateTextFields();  // function Materialize.updateTextFields(); to reinitialize all the Materialize labels on the page if you are dynamically adding inputs.
+    }
+
+    function browsing(){
+        sendTo(null, 'browsing', {}, function (msg) {
+            if (msg) {
+                if (msg.error) {
+                    showMessage(msg.error, _('Error'), 'alert');
+                }
+            }
+        });
+    }
+
+    // ... and the function save has to exist.
+    // you have to make sure the callback is called with the settings object as first param!
+    function save(callback) {
+        // example: select elements with class=value and build settings object
+        var obj = {};
+        $('.value').each(function () {
+            var $this = $(this);
+            if ($this.attr('type') === 'checkbox') {
+                obj[$this.attr('id')] = $this.prop('checked');
+            } else {
+                obj[$this.attr('id')] = $this.val();
+            }
+        });
+        callback(obj);
+    }
+
+    // subscribe to changes
+    socket.emit('subscribe', namespace + '.info.*');
+    socket.emit('subscribeObjects', namespace + '.*');
+
+    // react to changes
+    socket.on('stateChange', function (id, state) {
+        // only watch our own states
+        if (id.substring(0, namespaceLen) !== namespace) return;
+        console.log("State change announced: " + id + " and obj = " + JSON.stringify(state));
+    });
+
+    socket.on('objectChange', function (id, obj) {
+        if (id.substring(0, namespaceLen) !== namespace) return;
+        console.log("Object change announced: " + id + " and obj = " + JSON.stringify(obj));
+    });
+
+</script>
+</head>
+<body>
+    <!-- you have to put your config page in a div with id adapter-container -->
+    <div class="m adapter-container">
+        <div class="row">
+            <!-- Forms are the standard way to receive user inputted data.
+         Learn more http://materializecss.com/forms.html-->
+            <div class="row">
+                <div class="input-field col s6">
+                    <img src="miio.png" class="logo">
+                </div>
+                <div class="col s1">
+                    <a id="browse" class="btn-floating waves-effect waves-light green tooltipped center-align hoverable" data-tooltip="Browse!"><i class="material-icons large">search</i></a>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col s12">
+                    <p class="translate">on save adapter restarts with new config immediately</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
