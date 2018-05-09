@@ -13,22 +13,26 @@
 <script type="text/javascript" src="../../js/adapter-settings.js"></script>
 <script type="text/javascript" src="words.js"></script>
  <style>
-  .m .col .select-wrapper+label {
-   top: -26px;  
-  }
-     .m span{
+    .m .col .select-wrapper+label {
+       top: -26px;  
+    }
+    .m span{
          font-size: 0.9em;
-     }
+    }
+    .m .miiologo {
+        padding: 0.5rem;
+        width: 64px;
+    }
  </style>
 <!-- you have to define 2 functions in the global scope: -->
 <script type="text/javascript">
     var namespace = 'miio.' + instance,
         namespaceLen = namespace.length;
-
+    
     // the function loadSettings has to exist ...
     function load(settings, onChange) {
         // example: select elements with id=key and class=value and insert value
-       if (!settings) return;
+        if (!settings) return;
         $('.value').each(function () {            
             var $key = $(this);
             var id = $key.attr('id');
@@ -50,7 +54,18 @@
         $('#browse').click(function() {
             browsing();
         });
-        M.updateTextFields();  // function Materialize.updateTextFields(); to reinitialize all the Materialize labels on the page if you are dynamically adding inputs.
+        $("#adding").click(function(e) {
+            addDeviceDialog();
+        });
+        $(".modal").modal({dismissible: false});
+        M.updateTextFields();
+        getDevices();
+        if (common.readme) {
+            var $browse = $('#browse').first().parent();
+            if ($browse) {
+                $('<li><a id="adding" class="btn-floating waves-effect waves-light orange tooltipped center-align hoverable" data-tooltip="Help" href="' + common.readme +'" target="_blank"><i class="material-icons large">live_help</i></a></li>').insertAfter($browse);
+            }
+        }
     }
 
     function browsing(){
@@ -95,26 +110,157 @@
         console.log("Object change announced: " + id + " and obj = " + JSON.stringify(obj));
     });
 
+    function addDevice(addresss, token) {
+        sendTo(null, 'adddevice', {address: addresss, token: token}, function (msg) {
+            if (msg) {
+                if (msg.error) {
+                    showMessage(msg.error, _('Error'), 'alert');
+                } else {
+                    getDevices();
+                }
+            }
+        });
+    }
+
+    function addDeviceDialog() {
+        // var text = 'Enter new name for "'+name+'" ('+id+')?';
+        // $('#modaladd').find("h3").text("Rename device");
+        $('#address').val('');
+        $('#token').val('');
+        $("#modaladd a.btn[name='yes']").unbind("click");
+        $("#modaladd a.btn[name='yes']").click(function(e) {
+            let addresss = $('#address').val();
+            let token = $('#token').val();
+            addDevice(addresss, token);
+        });
+        $('#modaladd').modal('open');
+        M.updateTextFields();
+    }
+
+    function showDevices(devices) {
+        var html = '';
+        for (var i=0;i < devices.length; i++) {
+            var d = devices[i];
+            var card = getCard(d);
+            html += card;
+        }
+        $('#devices').html(html);
+    }
+
+    function getDevices() {
+        sendTo(null, 'getDevices', {}, function (msg) {
+            //console.log(msg);
+            if (msg) {
+                if (msg.error) {
+                    showMessage(msg.error, _('Error'), 'alert');
+                } else {
+                    showDevices(msg);
+                }
+            }
+        });
+    }
+
+    function getCard(dev) {
+        var title = dev.common.name,
+            id = dev._id,
+            img_src = '',
+            rooms = [], room;
+        for (var r in dev.rooms) {
+            if (dev.rooms[r].hasOwnProperty(systemLang)) {
+                rooms.push(dev.rooms[r][systemLang]);
+            } else {
+                rooms.push(dev.rooms[r]);
+            }
+        }
+        room = rooms.join(',');
+        if (room) {
+            room = '<div class="card-action">'+room+'</div>';
+        }
+
+        switch(true) {
+            case (dev.common.type=="philips.light.ceiling"):
+                img_src = "img/xiaomi_philips_ceiling.png";
+                break;
+            default:
+                img_src = "img/unknown.png";
+        }
+
+        var image = '<img src="' + img_src + '" width="96px">',
+            info = '<ul><li><span class="data">' + dev.common.address + '</span></li><li><span class="data">' + dev.common.type + '</span></li></ul>',
+            //buttons = '<a name="delete" class="btn-floating waves-effect waves-light right hoverable black"><i class="material-icons tiny">delete</i></a><a name="edit" class="btn-floating waves-effect waves-light right hoverable blue"><i class="material-icons small">mode_edit</i></a>',
+            buttons = '',
+            card = '<div id="' + id + '" class="device col s12 m6 l4 xl3">'+
+                    //'<div class="card hoverable grey lighten-2">'+
+                    '<div class="card hoverable">'+
+                       '<div class="card-content">'+
+                         '<i class="card-profile-image left">'+image+'</i>'+'<span class="card-title">'+title+'</span>'+
+                         info+
+                        '</div>'+
+                        room+
+                        '<div class="card-reveal">'+
+                            '<div class="input-field">'+
+                              '<input id="name" type="text" class="value validate">'+
+                              '<label for="name">Enter new name</label>'+
+                            '</div>'+
+                            '<span class="right">'+
+                              '<a name="done" class="waves-effect waves-green btn green"><i class="material-icons">done</i></a>'+
+                              '<a name="close" class="waves-effect waves-red btn-flat"><i class="material-icons">close</i></a>'+
+                            '</span>'+
+                        '</div>'+
+                      '</div>'+
+                    '</div>';
+        return card;
+    }
+
 </script>
 </head>
 <body>
     <!-- you have to put your config page in a div with id adapter-container -->
     <div class="m adapter-container">
         <div class="row">
-            <!-- Forms are the standard way to receive user inputted data.
-         Learn more http://materializecss.com/forms.html-->
-            <div class="row">
-                <div class="input-field col s6">
+            <!-- <div class="row">
+                <div class="col s6">
                     <img src="miio.png" class="logo">
                 </div>
-                <div class="col s1">
-                    <a id="browse" class="btn-floating waves-effect waves-light green tooltipped center-align hoverable" data-tooltip="Browse!"><i class="material-icons large">search</i></a>
+            </div> -->
+            <div class="row">
+                <nav>
+                    <div class="nav-wrapper">
+                        <div class="col">
+                            <img src="miio.png" class="miiologo left">
+                        </div>
+                        <ul id="nav-mobile" class="right">
+                            <li><a id="adding" class="btn-floating waves-effect waves-light green tooltipped center-align hoverable" data-tooltip="Add"><i class="material-icons large">add</i></a></li>
+                            <li><a id="browse" class="btn-floating waves-effect waves-light blue tooltipped center-align hoverable" data-tooltip="Browse"><i class="material-icons large">search</i></a></li>
+                        </ul>
+                    </div>
+                </nav>
+            </div>
+        </div>
+        <div class="row">
+            <div id="devices" class="row">
+            </div>
+        </div>
+    </div>
+
+    <div class="materialize-dialogs m">
+        <div id="modaladd" class="modal">
+            <div class="modal-content">
+                <h3 class="translate">Add device</h3>
+                <div class="row">
+                    <div class="input-field col s12">
+                        <input id="address" type="text" class="value validate">
+                        <label for="address" class="translate">Address</label>
+                    </div>
+                    <div class="input-field col s12">
+                        <input id="token" type="text" class="value">
+                        <label for="token" class="translate">Token</label>
+                    </div>
                 </div>
             </div>
-            <div class="row">
-                <div class="col s12">
-                    <p class="translate">on save adapter restarts with new config immediately</p>
-                </div>
+            <div class="modal-footer">
+            <a name="yes" href="#!" class="modal-action modal-close waves-effect waves-green btn green translate">Add</a>
+            <a href="#!" class="modal-action modal-close waves-effect waves-red btn-flat translate">Cancel</a>
             </div>
         </div>
     </div>
