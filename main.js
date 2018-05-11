@@ -22,7 +22,8 @@ const devProps = {
             "default": "false", 
             "read": true, 
             "write": true, 
-            "action": "power"
+            "get": "power",
+            "set": "setPower"
         },
         "togglePower": {
             "name": "Toggle", 
@@ -52,10 +53,40 @@ const devProps = {
             "action": "turnOff"
         },
         "state": {},
-        "brightness": {},
-        "increaseBrightness": {},
-        "decreaseBrightness": {},
-        "mode": {}
+        "brightness": {
+            "name": "Brightness", 
+            "role": "level.dimmer", 
+            "type": "number", 
+            "read": true, 
+            "write": true, 
+            "get": "brightness",
+            "set": "setBrightness"
+        },
+        "increaseBrightness": {
+            "name": "Brightness Up", 
+            "role": "button", 
+            "type": "boolean", 
+            "read": false, 
+            "write": true, 
+            "action": "increaseBrightness"
+        },
+        "decreaseBrightness": {
+            "name": "Brightness Down", 
+            "role": "button", 
+            "type": "boolean", 
+            "read": false, 
+            "write": true, 
+            "action": "decreaseBrightness"
+        },
+        "mode": {
+            "name": "Mode", 
+            "role": "level", 
+            "type": "number", 
+            "read": true, 
+            "write": true, 
+            "get": "mode",
+            "set": "setMode"
+        }
     }
 }
 
@@ -74,9 +105,10 @@ adapter.on('objectChange', function (id, obj) {
 
 adapter.on('stateChange', function (id, state) {
     adapter.log.debug('stateChange ' + id + ' ' + JSON.stringify(state));
-
     if (state && !state.ack) {
-        adapter.log.debug('ack is not set!');
+        let devId = id.split(".")[2],
+            name = id.split(".")[3];
+        processStateChange(devId, name, state.val);
     }
 });
 
@@ -124,6 +156,7 @@ adapter.on('ready', function () {
 
 function main() {
     adapter.subscribeStates('*');
+    checkDevices();
 }
 
 
@@ -269,7 +302,6 @@ function getDevices(from, command, callback){
 
 function updateDevStates(devId, device){
     if (device) {
-        //let devId = '10_0_0_109';
         if (device.miioModel && devProps.hasOwnProperty(device.miioModel)) {
             let devStates = devProps[device.miioModel];
             for (let key in devStates) {
@@ -282,7 +314,14 @@ function updateDevStates(devId, device){
                         read: prop.read,
                         write: prop.write,
                     };
-                    updateState(devId, key, '', conf);
+                    if (prop.get) {
+                        device[prop.get]()
+                            .then(val => {
+                                updateState(devId, key, val, conf);
+                            });
+                    } else {
+                        updateState(devId, key, '', conf);
+                    }
                 }
             }
         }
@@ -321,22 +360,83 @@ function updateState(devId, name, value, common) {
             adapter.extendObject(id, {type: 'state', common: new_common});
             adapter.setState(id, value, true);
         } else {
-            adapter.log.debug('no device '+devId);
+            adapter.log.debug('Wrong device '+devId);
         }
     });
 }
 
-// Resolve a device, resolving the token automatically or from storage
-// miio.device({
-//     address: '10.0.0.109',
-//     token: '65a339f2ce193e93b206aed80b03bde9',
-// }).then(device => {
-//     adapter.log.debug('connected: '+safeJsonStringify(device));
-//     //device.call('set_mode', ['set_bright', 100])
-//     //device.call('set_mode', ['set_power', 'on'])
-//     // device.call('set_mode', ['set_bright', 100])
-//     //     .then(on => adapter.log.debug('Power is now' + safeJsonStringify(on)))
-//     //     .catch(err =>adapter.log.debug('toggle error: ' + safeJsonStringify(err)));
-// }).catch(err => {
-//     adapter.log.debug('connected error: ' + safeJsonStringify(err));
-// });
+
+function checkDevices(){
+    // пройтись по всем устройствам адаптера и опросить их состояние
+    adapter.log.debug('checkDevices');
+    adapter.getDevices((err, result) => {
+        if (result) {
+            for (var item in result) {
+                let devInfo = result[item];
+                getMiioDevice(devInfo, device => {
+                    if (device) {
+                        updateDevStates(devInfo._id, device);
+                    }
+                });
+            }
+        }
+    });
+}
+
+function getMiioDevice(adapterDev, callback){
+    let devId = adapterDev._id,
+          addr = adapterDev.common.address,
+          token = adapterDev.common.token,
+          dev;
+    if (token) {
+        dev = miio.device({
+            address: addr,
+            token: token,
+        });
+    } else {
+        dev = miio.device({
+            address: addr
+        });
+    }
+    dev.then(device => {
+        adapter.log.debug("connected: " + safeJsonStringify(device));
+        updateState(devId, "connected", true, {name: "Connected", role: "state", type: "boolean", read: true, write: false});
+        if (callback) callback(device);
+    }).catch(err => {
+        adapter.log.debug("connection error: " + safeJsonStringify(err));
+        updateState(devId, "connected", false, {name: "Connected", role: "state", type: "boolean", read: true, write: false});
+        if (callback) callback();
+    });
+}
+
+function processStateChange(devId, state, value){
+    adapter.getObject(devId, function(err, obj) {
+        if (obj) {
+            getMiioDevice(obj, device => {
+                if (device) {
+                    let devStates = devProps[device.miioModel];
+                    if (devStates.hasOwnProperty(state)) {
+                        let prop = devStates[state];
+                        if (prop.action) {
+                            device[prop.action]()
+                                .then(val => {
+                                    adapter.log.debug("action '" + prop.action + "' ok: " + safeJsonStringify(val));
+                                })
+                                .catch(err => {
+                                    adapter.log.debug("action '" + prop.action + "' error: " + safeJsonStringify(err));
+                                });
+                        } else if (prop.set) {
+                            device[prop.set](value)
+                                .then(val => {
+                                    adapter.log.debug("set '" + prop.set + "' to '" + value + "' ok: " + safeJsonStringify(val));
+                                })
+                                .catch(err => {
+                                    adapter.log.debug("set '" + prop.set + "' to '" + value + "' error: " + safeJsonStringify(err));
+                                });
+                        }
+                    }
+                }
+            });
+        }
+    });
+}
